@@ -3,7 +3,7 @@
 #include <inttypes.h>
 #include <string.h>
 #include <strings.h>
-
+#define regSize sizeof(struct dogType)
 struct dogType{
   //estructura que contiene los datos de mascota
     char nombre[32];
@@ -241,6 +241,61 @@ void buscar(int *indi, int *pos, char bnombre[36]){
   }
   fclose(fp);
 }
+void moverUlt(int *indi, int *pos, int reg){
+  //mueve el ultimo registro a la posicion del registro borrado y arregla el hash
+  FILE *fp;
+  int dir;
+  struct dogType *anterior = malloc(regSize);
+  struct dogType *ultimo = malloc(regSize);
+  fp = fopen("dataDogs.dat", "r");
+  dir = pos[0]-regSize;
+  fseek(fp, dir, SEEK_SET);
+  fread(ultimo, sizeof(struct dogType),1,fp);
+  if(ultimo->prev >= 8000){//existe un registro previo, arreglar la cadena
+    fp = fopen("dataDogs.dat", "r+");
+    fseek(fp, ultimo->prev, SEEK_SET);
+    fread(anterior, sizeof(struct dogType),1,fp);
+    anterior->next = reg; //apuntar a la nueva ubicacion del registro
+    fseek(fp, ultimo->prev, SEEK_SET);
+    fwrite(anterior, sizeof(struct dogType), 1,fp);
+    fclose(fp);
+  }
+  //si es el primer o unico registro con ese hash, solo se debe copiar en
+  //la posicion del registro borrado
+  fp = fopen("dataDogs.dat", "r+");
+  fseek(fp, reg, SEEK_SET);
+  fwrite(ultimo, regSize, 1,fp);
+  fclose(fp);
+  pos[0] = pos[0]-regSize; //final del archivo un registro antes
+  pos[1] = pos[1]-1; //ahora hay un registro menos
+}
+void newfile(int *indi, int *pos){
+  //copia el archivo a uno nuevo y lo reemplaza
+  FILE *fp;
+  FILE *newfp;
+  int i, dir, ini, fin;
+  struct dogType *oldReg = malloc(regSize);
+  fp = fopen("dataDogs.dat","a+");
+  newfp = fopen("newDataDogs.dat","a+");
+  //copiar el indice y pos en archivo nuevo
+  //fseek(newfp, 0, SEEK_SET);
+  fwrite(indi, 1000*sizeof(int), 1,newfp); //escribe el indice en archivo
+  //fseek(newfp, 4000, SEEK_SET);
+  fwrite(pos, 1000*sizeof(int), 1,newfp); //escribe pos en archivo
+  //copiar todos los registros
+  for (i = 0; i <= pos[1]; i++ ){
+    dir = 8000 + regSize*i;
+    fseek(fp,dir,SEEK_SET);
+    fread(oldReg, regSize,1,fp);//leer archivo antiguo
+    //fseek(newfp,dir,SEEK_SET);
+    fwrite(oldReg, regSize, 1,newfp); //escribir en el nuevo
+  }
+  free(oldReg);
+  fclose(fp);
+  fclose(newfp);
+  remove("dataDogs.dat");
+	rename("newDataDogs.dat" , "dataDogs.dat");
+}
 
 void eliminar(int *indi, int *pos){
   int reg, key;
@@ -249,7 +304,7 @@ void eliminar(int *indi, int *pos){
   printf("Ingrese el numero del registro a eliminar: ");
   scanf(" %i", &reg);
   if(reg<8000 || reg>pos[0]){  //verifica que el numero de registro exista
-    printf("Ingrese un numero de registro valido \n");
+    printf("\n Ingrese un numero de registro valido \n");
     return;
   }
   struct dogType *dato = malloc(sizeof(struct dogType));
@@ -260,7 +315,7 @@ void eliminar(int *indi, int *pos){
   fread(dato, sizeof(struct dogType),1,fp); //leer el registro
   key = hash(dato->nombre);
   if(dato->state == key){ //comprueba que registro no contiene basura
-    if(dato->prev>=8000 && dato->next>=8000){ //comprueba si existe un registro anterior y uno siguiente
+    if(dato->prev>=8000 && dato->next>=8000){ //existe un registro anterior y uno siguiente
       fp = fopen("dataDogs.dat", "r+");
       //actualizar el registro anterior
       fseek(fp, dato->prev, SEEK_SET);
@@ -279,8 +334,10 @@ void eliminar(int *indi, int *pos){
       fseek(fp, reg, SEEK_SET);
       fwrite(sig, sizeof(struct dogType), 1,fp);
       fclose(fp);
-      liberar(reg, pos); //registro disponible para escritura
-      update(indi,pos);
+      moverUlt(indi,pos,reg); //llama a la funcion que mueve el ultimo registro
+      newfile(indi,pos); //llama a la funcion que crea el archivo actualizado
+      //liberar(reg, pos); //registro disponible para escritura
+      //update(indi,pos);
       printf("Registro borrado\n");
     }
     else{
@@ -297,8 +354,10 @@ void eliminar(int *indi, int *pos){
         fseek(fp, reg, SEEK_SET);
         fwrite(sig, sizeof(struct dogType), 1,fp);
         fclose(fp);
-        liberar(reg, pos); //registro disponible para escritura
-        update(indi,pos);
+        moverUlt(indi,pos,reg); //llama a la funcion que mueve el ultimo registro
+        newfile(indi,pos); //llama a la funcion que crea el archivo actualizado
+        //liberar(reg, pos); //registro disponible para escritura
+        //update(indi,pos);
         printf("Registro borrado\n");
       }
       if(dato->next>=8000){ //quiere decir que es el primero del indice
@@ -315,8 +374,10 @@ void eliminar(int *indi, int *pos){
         fseek(fp, reg, SEEK_SET);
         fwrite(sig, sizeof(struct dogType), 1,fp);
         fclose(fp);
-        liberar(reg, pos); //registro disponible para escritura
-        update(indi,pos);
+        moverUlt(indi,pos,reg); //llama a la funcion que mueve el ultimo registro
+        newfile(indi,pos); //llama a la funcion que crea el archivo actualizado
+        //liberar(reg, pos); //registro disponible para escritura
+        //update(indi,pos);
         printf("Registro borrado\n");
       }
       if(dato->next ==-1 && dato->prev == -1){//es el unico registro con ese indice
@@ -327,8 +388,10 @@ void eliminar(int *indi, int *pos){
         fseek(fp, reg, SEEK_SET);
         fwrite(sig, sizeof(struct dogType), 1,fp);
         fclose(fp);
-        liberar(reg, pos); //registro disponible para escritura
-        update(indi,pos);
+        moverUlt(indi,pos,reg); //llama a la funcion que mueve el ultimo registro
+        newfile(indi,pos); //llama a la funcion que crea el archivo actualizado
+        //liberar(reg, pos); //registro disponible para escritura
+        //update(indi,pos);
         printf("Registro borrado\n");
       }
     }
