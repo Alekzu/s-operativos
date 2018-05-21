@@ -437,9 +437,9 @@ void mos(int *pos, int reg, void *ap){
   fclose(fp);
   //free(dato);
 }
-
-void main(){
-  int *indice, *pos, salir, opt, reg, svfd, errv, r,clientfd, ctrl, *total, i;
+void *connection_handler(void *socket_desc)
+{
+  int *indice, *pos, salir, opt, reg, errv, r,clientfd, ctrl, *total, i;
   char bNombre[36];
   struct dogType *tmp = malloc(sizeof(struct dogType));
   struct transfer *info = malloc(TRANSFSIZE);
@@ -449,44 +449,7 @@ void main(){
   total = malloc(sizeof(int));
   iniciar(indice, pos);
   salir = 1; //variable de control
-
-  //iniciar servidor
-  struct sockaddr_in server, cliente;
-  socklen_t tamanio, tamac;
-//socket
-  svfd = socket(AF_INET,SOCK_STREAM,0); //
-  if(svfd ==-1){
-      perror("mal:");
-  exit(-1);
-  }
-  server.sin_family = AF_INET;
-  server.sin_port = htons(3535);//indianism converter (memory architecture intel/arm)
-  server.sin_addr.s_addr = INADDR_ANY; //para que escuche cualquier interfaz de red
-  bzero(server.sin_zero,8);//llenar 8 bit con ceros
-  tamanio = sizeof(struct sockaddr_in);
-
-  errv = bind(svfd, (struct sockaddr*)&server, tamanio);
-  if(errv == -1){
-      perror("mal:");
-  exit(-1);
-  }
-//LISTEN
-  errv = listen(svfd,BACKLOG);
-  if(errv == -1){
-      perror("mal:");
-  exit(-1);
-  }
-  tamac = 0; //si no se inicializa, da error
-  //accept recibe la conexion con el socket del servidor,
-  //guarda los datos del cliente (ip,etc)
-  //crea un socket exclusivo para el cliente
-  clientfd = accept(svfd,(struct sockaddr*)&cliente,&tamac);
-  if(clientfd == -1){
-      perror("mal:");
-  exit(-1);
-  }
-  semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
-  //menu
+  int clientfd = *(int*)socket_desc;
   while(keepRunning){ //loop hasta que se presione ctrl + c
     r = recv(clientfd,info,TRANSFSIZE,0);
     if(r ==-1){
@@ -569,6 +532,90 @@ void main(){
     }
 
   }
+}
+
+void main(){
+  int *indice, *pos, salir, opt, reg, svfd, errv, r,clientfd, ctrl, *total, i, client_sock;
+  int sockfd, *new_sock;
+  int option = 1;
+  char bNombre[36];
+  struct dogType *tmp = malloc(sizeof(struct dogType));
+  struct transfer *info = malloc(TRANSFSIZE);
+  struct dogType *lista;
+  indice = malloc(1000 * sizeof(int)); //indice por nombre
+  pos = malloc(1000 * sizeof(int));   //posiciones libres, total de registros y registros libres
+  total = malloc(sizeof(int));
+  iniciar(indice, pos);
+  salir = 1; //variable de control
+  //semaforo
+  semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
+
+  //iniciar servidor
+  struct sockaddr_in server, cliente;
+  socklen_t tamanio, tamac;
+//socket
+  svfd = socket(AF_INET,SOCK_STREAM,0); //
+  if(svfd ==-1){
+      perror("mal:");
+  exit(-1);
+  }
+  server.sin_family = AF_INET;
+  server.sin_port = htons(3535);//indianism converter (memory architecture intel/arm)
+  server.sin_addr.s_addr = INADDR_ANY; //para que escuche cualquier interfaz de red
+  bzero(server.sin_zero,8);//llenar 8 bit con ceros
+  tamanio = sizeof(struct sockaddr_in);
+
+  errv = bind(svfd, (struct sockaddr*)&server, tamanio);
+  if(errv == -1){
+      perror("mal:");
+  exit(-1);
+  }
+//LISTEN
+  errv = listen(svfd,BACKLOG);
+  if(errv == -1){
+      perror("mal:");
+  exit(-1);
+  }
+  
+  tamac = 0; //si no se inicializa, da error
+  //accept recibe la conexion con el socket del servidor,
+  //guarda los datos del cliente (ip,etc)
+  //crea un socket exclusivo para el cliente
+  
+  //multithread
+    while(client_sock = accept(svfd, (struct sockaddr *)&cliente,&tamac))
+        {
+            puts("Connection accepted");
+            pthread_t curr_thread;
+            new_sock = malloc(sizeof(int));
+            *new_sock = client_sock;
+
+            if( pthread_create( &curr_thread , NULL ,  connection_handler , (void*) new_sock) < 0)
+            {
+                perror("could not create thread");
+                return 1;
+            }
+
+            //Now join the thread , so that we dont terminate before the thread
+            //pthread_join( thread_id , NULL);
+            puts("Handler assigned");
+        }
+
+        if (client_sock < 0)
+        {
+            perror("accept failed");
+            return 1;
+        }
+    close(svfd);
+    return 0;
+  
+  
+  
+  
+  
+  
+  //menu
+  
   sem_close(semaforo);
   sem_unlink("semaforo1");
   close(clientfd);

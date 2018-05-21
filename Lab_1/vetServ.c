@@ -485,7 +485,7 @@ void main(){
       perror("mal:");
   exit(-1);
   }
-  semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
+  //semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
   //menu
   while(keepRunning){ //loop hasta que se presione ctrl + c
     r = recv(clientfd,info,TRANSFSIZE,0);
@@ -569,8 +569,8 @@ void main(){
     }
 
   }
-  sem_close(semaforo);
-  sem_unlink("semaforo1");
+  //sem_close(semaforo);
+  //sem_unlink("semaforo1");
   close(clientfd);
   close(svfd);
   free(tmp);
