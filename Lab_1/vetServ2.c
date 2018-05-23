@@ -86,6 +86,17 @@ void iniciar(int *indice, int *pos){ //crea el archivo .dat o lo lee si existe
   }
 }
 
+void reload(int *indice, int *pos){
+  FILE *fp;
+  fp = fopen("dataDogs.dat", "r");
+  //printf("archivo cargado\n");
+  fseek(fp, 0, SEEK_SET);
+  fread(indice, 1000*sizeof(int),1,fp);
+  fseek(fp, 4000, SEEK_SET);
+  fread(pos, 1000*sizeof(int),1,fp);
+  fclose(fp);
+}
+
 int poslibre(int *pos){
   //encuentra una posicion libre en el arreglo para escribir un nuevo registro
   int i, newpos;
@@ -105,21 +116,14 @@ int poslibre(int *pos){
     return newpos;
   }
 }
-void liberar(int reg, int *pos){
-  int i;
-  pos[2] = pos[2]+1; //nueva posicion disponible
-  pos[1] = pos[1]-1; // un registro menos
-  //if(pos[2]>=990){} rehash()}
-  for(i = 9; i < 1000; i++){
-    if (pos[i] == 0){ //buscar unindice libre en pos para ubicar la direccion
-        pos[i] = reg; //añade direccion disponible
-        return;
-    }
-  }
-}
+
 void update(int *indi, int *pos){ //escribe el indice y pos en archivo
   FILE *fp;
   fp = fopen("dataDogs.dat", "r+");
+  if (fp == NULL){
+    perror("Error de archivo: ");
+    return;
+  }
   fseek(fp, 0, SEEK_SET);
   fwrite(indi, 1000*sizeof(int), 1,fp); //actualiza el indice
   fseek(fp, 4000, SEEK_SET);
@@ -132,30 +136,40 @@ int ingresar(int *indi, int *pos, void *ap){
     struct dogType *dato;
     dato = ap;
     struct dogType *archivo = malloc(sizeof(struct dogType));
-    int key, actual, posicion, ctrl,fem,male, resp;
-    char sex[2], macho[] = "m",hembra[] = "h";
-    ctrl = 0;
+    int key, actual, posicion, resp, r;
     if (dato == NULL | archivo == NULL)
     {
         return 0;
     }
+    reload(indi,pos);
 
     FILE *fp;
     fp = fopen("dataDogs.dat", "r+");
+    if (fp == NULL){
+      perror("Error de archivo: ");
+      return 0;
+    }
     key = hash(dato->nombre); //encontrar el hash del nombre
-    posicion = poslibre(pos);
+    posicion = pos[0]; //pos[0] indica el final del archivo
+    //pos[0] = pos[0] + regSize; //nuevo final del archivo
     dato->state = key;
     if(posicion == 0){
       printf("error de posicion \n");
       return 0;
     }
-    if (indi[key] == 0) // si no existe, inicia la lista
+    if (indi[key] == 0) // si no existe uno con ese hash, inicia la lista
     {
        indi[key] = posicion;
        printf("nuevo registro nº: %i\n",posicion);
        fseek(fp, posicion, SEEK_SET); //ubica el indicador en la posicion libre
-       fwrite(dato, sizeof(struct dogType), 1,fp); //escribir el dato en la posicion libre
+       r = fwrite(dato, sizeof(struct dogType), 1,fp); //escribir el dato en la posicion libre
+       if(r == 0){
+         printf("error de escritura \n");
+         return 0;
+       }
        pos[1] =pos[1]+1; //+1 registros en total
+       pos[0] = pos[0] + regSize; //nuevo final del archivo
+       fclose(fp);
        update(indi,pos); //actualiza
        printf("Registro guardado con exito \n");
        resp = posicion;
@@ -178,9 +192,14 @@ int ingresar(int *indi, int *pos, void *ap){
                 fseek(fp, actual, SEEK_SET);
                 fwrite(archivo, sizeof(struct dogType), 1,fp); //reescribir el anterior con el nuevo next
                 fseek(fp, posicion, SEEK_SET); //ubica el indicador en la posicion libre
-                fwrite(dato, sizeof(struct dogType), 1,fp); //escribir el dato en la posicion libre
+                r = fwrite(dato, sizeof(struct dogType), 1,fp); //escribir el dato en la posicion libre
+                if(r == 0){
+                  printf("error de escritura \n");
+                  return 0;
+                }
                 pos[1] =pos[1]+1; //+1 registros en total
-                //printf("base: %i\n nuevo: %i anterior: %i",indi[key],posicion,siguiente);
+                pos[0] = pos[0] + regSize; //nuevo final del archivo
+                fclose(fp);
                 update(indi,pos);
                 printf("Registro guardado con exito \n");
                 resp = posicion;
@@ -190,21 +209,22 @@ int ingresar(int *indi, int *pos, void *ap){
             actual = archivo->next;
         }
     }
-    fclose(fp);
-    //ree(dato);
+    if(actual == 0){fclose(fp);}
+    //free(dato);
     free(archivo);
     return resp;
 }
 
 void *buscar(int *indi, int *pos, char bnombre[36], int *total){
-  //busca el registro por nombre y muestra todos los que existan
+  //busca el registro por nombre y guarda los que coincidan con el nombre
+  //en un arreglo de estructuras
   int key, res, siguiente, num, i, salir;
   salir = 1;
   num = 0;
   struct dogType *dato = malloc(sizeof(struct dogType));
   struct dogType *lista;
+  reload(indi,pos);
   key = hash(bnombre); //obtiene el hash del nombre a buscar
-  //static int inicio = indi[key];
   siguiente = indi[key]; //obtiene la direccion en indice usando el hash
   if(siguiente == 0){
     printf("No existe el registro\n");
@@ -225,18 +245,18 @@ void *buscar(int *indi, int *pos, char bnombre[36], int *total){
     fread(dato, sizeof(struct dogType),1,fp); //lee el registro
     res = strcasecmp(dato->nombre,bnombre); //compara ignorando mayusculas
     if(res == 0){  // si son iguales, muestra el registro
-      printf("uno: %i \n",dato->state);
-      printf("while siguiente: %i \n",siguiente);
+      //printf("uno: %i \n",dato->state);
+      //printf("while siguiente: %i \n",siguiente);
       lista[i] = *dato;
       num++;  //control de registros con el mismo nombre
       i++;
     }
     siguiente = dato->next; //se mueve al siguiente mienbro de la cadena enlazada
   }
-  printf("%i\n",num);
+  //printf("%i\n",num);
   *total = num;
-  if(num == 0){ //no imprimio ningun resultado
-    printf("No existe el registro\n");
+  if(num == 0){ //no encontro registro que coincidan
+    printf("No se encontro registro\n");
     return NULL;
   }
 
@@ -262,7 +282,7 @@ void moverUlt(int *indi, int *pos, int reg){
     fwrite(anterior, sizeof(struct dogType), 1,fp);
     fclose(fp);
   }
-  //si es el primer o unico registro con ese hash, solo se debe copiar en
+  //si es el primero o unico registro con ese hash, solo se debe copiar en
   //la posicion del registro borrado
   fp = fopen("dataDogs.dat", "r+");
   fseek(fp, reg, SEEK_SET);
@@ -281,10 +301,9 @@ void newfile(int *indi, int *pos){
   fp = fopen("dataDogs.dat","a+");
   newfp = fopen("newDataDogs.dat","a+");
   //copiar el indice y pos en archivo nuevo
-  //fseek(newfp, 0, SEEK_SET);
   fwrite(indi, 1000*sizeof(int), 1,newfp); //escribe el indice en archivo
-  //fseek(newfp, 4000, SEEK_SET);
   fwrite(pos, 1000*sizeof(int), 1,newfp); //escribe pos en archivo
+
   //copiar todos los registros
   for (i = 0; i <= pos[1]; i++ ){
     dir = 8000 + regSize*i;
@@ -301,6 +320,7 @@ void newfile(int *indi, int *pos){
 }
 
 int eliminar(int *indi, int *pos, int reg){
+  //recibe un numero de registro y lo borra del archivo
   int key, resp;
   FILE *fp;
 
@@ -311,6 +331,7 @@ int eliminar(int *indi, int *pos, int reg){
   struct dogType *dato = malloc(sizeof(struct dogType));
   struct dogType *ante = malloc(sizeof(struct dogType));
   struct dogType *sig = malloc(sizeof(struct dogType));
+  reload(indi, pos);
   fp = fopen("dataDogs.dat", "r");
   fseek(fp, reg, SEEK_SET); //apuntar a la direccion de registro
   fread(dato, sizeof(struct dogType),1,fp); //leer el registro
@@ -410,15 +431,16 @@ int eliminar(int *indi, int *pos, int reg){
   return resp;
 }
 
-void mos(int *pos, int reg, void *ap){
+int mos(int *indi, int *pos, int reg, void *ap){
   //recibe una posicion de memoria, y muestra el registro en esa posicion
-  int key;
+  int key, resp;
   struct dogType *dato;
   dato = ap;
+  reload(indi,pos);
   if(reg<8000 || reg>pos[0]){  //verifica que el numero de registro exista
     //printf("Ingrese un numero de registro valido \n");
     dato->state = -1;
-    return;
+    return -1;
   }
 
   FILE *fp;
@@ -429,17 +451,21 @@ void mos(int *pos, int reg, void *ap){
   if(dato->state == key){ //comprueba que registro no contiene basura
 	printf("Registro nº: %i \n",reg);
 	//mostrar(dato);
+  resp = 1;
   }
   else{
     //printf("No existe el registro \n");
     dato->state = -1;
+    resp = -1;
   }
   fclose(fp);
   //free(dato);
+  return resp;
 }
-void *connection_handler(void *socket_desc)
+void *conexion(void *socket_desc)
 {
   int *indice, *pos, salir, opt, reg, errv, r,clientfd, ctrl, *total, i;
+  clientfd = *(int*)socket_desc;
   char bNombre[36];
   struct dogType *tmp = malloc(sizeof(struct dogType));
   struct transfer *info = malloc(TRANSFSIZE);
@@ -449,7 +475,7 @@ void *connection_handler(void *socket_desc)
   total = malloc(sizeof(int));
   iniciar(indice, pos);
   salir = 1; //variable de control
-  int clientfd = *(int*)socket_desc;
+
   while(keepRunning){ //loop hasta que se presione ctrl + c
     r = recv(clientfd,info,TRANSFSIZE,0);
     if(r ==-1){
@@ -458,7 +484,7 @@ void *connection_handler(void *socket_desc)
     }
     opt = info->opcion;
     switch (opt) {
-      case 1:
+      case 1: //ingreso
         r = recv(clientfd,tmp,regSize,0);
         if(r ==-1){
             perror("receive:");
@@ -471,15 +497,18 @@ void *connection_handler(void *socket_desc)
         exit(-1);
         }
       break;
-      case 2:
-        mos(pos,info->reg,tmp);
+      case 2: //mostrar
+        ctrl =mos(pos,info->reg,tmp);
+        if(ctrl != 1){ //el registro no existe
+          tmp->next = 0;
+        }
         r = send(clientfd,tmp,regSize,0);
         if(r == -1){
             perror("mal:");
         exit(-1);
         }
       break;
-      case 3:
+      case 3: //eliminar
         r = send(clientfd,&pos[1],4,0); //envia la cantidad de registros
         if(r == -1){
             perror("mal:");
@@ -498,7 +527,7 @@ void *connection_handler(void *socket_desc)
         break;
         }
       break;
-      case 4:
+      case 4: //buscar
         //sem_wait(semaforo);
         lista = buscar(indice, pos, info->nombre, total);
         //sem_post(semaforo);
@@ -523,7 +552,7 @@ void *connection_handler(void *socket_desc)
         }
         free(lista);
       break;
-      case 5:
+      case 5: //salir
         //update(indice, pos);
         salir = 0;
       break;
@@ -532,65 +561,66 @@ void *connection_handler(void *socket_desc)
     }
 
   }
+  close(clientfd);
+  free(tmp);
+  free(total);
+  free(lista);
+  free(info);
+  free(indice);
+  free(pos);
 }
 
-void main(){
-  int *indice, *pos, salir, opt, reg, svfd, errv, r,clientfd, ctrl, *total, i, client_sock;
+int main(){
+  int svfd, r,clientfd, ctrl, client_sock, i;
   int sockfd, *new_sock;
   int option = 1;
-  char bNombre[36];
-  struct dogType *tmp = malloc(sizeof(struct dogType));
-  struct transfer *info = malloc(TRANSFSIZE);
-  struct dogType *lista;
-  indice = malloc(1000 * sizeof(int)); //indice por nombre
-  pos = malloc(1000 * sizeof(int));   //posiciones libres, total de registros y registros libres
-  total = malloc(sizeof(int));
-  iniciar(indice, pos);
-  salir = 1; //variable de control
+
   //semaforo
-  semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
+  //semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
 
   //iniciar servidor
   struct sockaddr_in server, cliente;
   socklen_t tamanio, tamac;
 //socket
-  svfd = socket(AF_INET,SOCK_STREAM,0); //
+  svfd = socket(AF_INET,SOCK_STREAM,0); // socket para servidor
   if(svfd ==-1){
       perror("mal:");
   exit(-1);
   }
+  setsockopt(svfd, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)); //reutilizar el socket
+  //datos del socket
   server.sin_family = AF_INET;
   server.sin_port = htons(3535);//indianism converter (memory architecture intel/arm)
   server.sin_addr.s_addr = INADDR_ANY; //para que escuche cualquier interfaz de red
   bzero(server.sin_zero,8);//llenar 8 bit con ceros
   tamanio = sizeof(struct sockaddr_in);
-
-  errv = bind(svfd, (struct sockaddr*)&server, tamanio);
-  if(errv == -1){
+  //bind
+  r = bind(svfd, (struct sockaddr*)&server, tamanio);
+  if(r == -1){
       perror("mal:");
   exit(-1);
   }
 //LISTEN
-  errv = listen(svfd,BACKLOG);
-  if(errv == -1){
+  r = listen(svfd,BACKLOG);
+  if(r == -1){
       perror("mal:");
   exit(-1);
   }
-  
+  pthread_t t[20]; //added
   tamac = 0; //si no se inicializa, da error
   //accept recibe la conexion con el socket del servidor,
   //guarda los datos del cliente (ip,etc)
   //crea un socket exclusivo para el cliente
-  
+
   //multithread
-    while(client_sock = accept(svfd, (struct sockaddr *)&cliente,&tamac))
+    /*while(client_sock = accept(svfd, (struct sockaddr *)&cliente,&tamac))
         {
             puts("Connection accepted");
             pthread_t curr_thread;
             new_sock = malloc(sizeof(int));
             *new_sock = client_sock;
 
-            if( pthread_create( &curr_thread , NULL ,  connection_handler , (void*) new_sock) < 0)
+            if( pthread_create( &curr_thread , NULL ,  conexion , (void*) new_sock) < 0)
             {
                 perror("could not create thread");
                 return 1;
@@ -599,7 +629,16 @@ void main(){
             //Now join the thread , so that we dont terminate before the thread
             //pthread_join( thread_id , NULL);
             puts("Handler assigned");
-        }
+        }*/
+    while(1)        //loop infinito
+      {
+       for(i=0;i<20;i++)      //can support 20 clients at a time
+       {
+        client_sock=accept(svfd,NULL,NULL);
+        printf("Connected to client %d\n",client_sock);
+        pthread_create(&t[i],NULL, conexion, (void *)&client_sock);
+       }
+      }
 
         if (client_sock < 0)
         {
@@ -607,23 +646,10 @@ void main(){
             return 1;
         }
     close(svfd);
+    //sem_close(semaforo);
+    //sem_unlink("semaforo1");
+    //close(clientfd);
+    //close(svfd);
+
     return 0;
-  
-  
-  
-  
-  
-  
-  //menu
-  
-  sem_close(semaforo);
-  sem_unlink("semaforo1");
-  close(clientfd);
-  close(svfd);
-  free(tmp);
-  free(total);
-  free(lista);
-  free(info);
-  free(indice);
-  free(pos);
 }

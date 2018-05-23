@@ -89,7 +89,7 @@ void enterCont(){ //pedir tecla para continuar
 }
 
 void mostrar(void *ap){
-  //recibe la direccion de memoria con un registro, y lo muestra en pantalla
+  //recibe un apuntador al registro, y lo muestra en pantalla
   struct dogType *dato;
   dato = ap;
 
@@ -107,7 +107,8 @@ void mostrar(void *ap){
 }
 
 int main(){
-  int salir, reg, opt, clientfd, r, resp, i;
+  int salir, reg, opt, clientfd, r, resp, i, num;
+  char term;
   struct dogType *tmp = malloc(regSize);
   struct transfer *info = malloc(TRANSFSIZE);
   struct sockaddr_in client;
@@ -128,7 +129,7 @@ int main(){
   tama = sizeof(struct sockaddr_in);
   r = connect(clientfd,(struct sockaddr*)&client,tama);
   if(r ==-1){
-      perror("connect:");
+      perror("conexion fallida:");
   exit(-1);
   }
   else printf("conexion realizada \n");
@@ -200,7 +201,11 @@ int main(){
         }
         printf("Numero de registros actual:%i\n", resp);
         printf("Ingrese el numero del registro a eliminar: ");
-        scanf(" %i", &info->reg);
+        if(scanf("%d%c", &num, &term) != 2 || term != '\n'){
+          info->reg = 0;}
+        else{
+          info->reg = num;}
+        //scanf(" %i", &info->reg);
         r = send(clientfd,info,TRANSFSIZE,0);//enviar el registro a borrar
         if(r == -1){
             perror("mal:");
