@@ -130,6 +130,31 @@ void update(int *indi, int *pos){ //escribe el indice y pos en archivo
   fwrite(pos, 1000*sizeof(int), 1,fp); //actualiza el arreglo pos
   fclose(fp);
 }
+void regLog(int cliente, int opt, int reg, char bnombre[36]){
+  time_t t = time(NULL);
+    char output[50];
+    char buffer[10];
+    char sep[2] = "-";
+    struct tm tm = *localtime(&t);
+    snprintf(buffer, 10, "%d", tm.tm_year+1900);
+    strcat(output,buffer);
+    strcat(output,sep);
+    snprintf(buffer, 10, "%d", tm.tm_mon + 1);
+    strcat(output,buffer);
+    strcat(output,sep);
+    snprintf(buffer, 10, "%d", tm.tm_mday);
+    strcat(output,buffer);
+    strcat(output,sep);
+    snprintf(buffer, 10, "%d", tm.tm_hour);
+    strcat(output,buffer);
+    strcat(output,sep);
+    snprintf(buffer, 10, "%d", tm.tm_min);
+    strcat(output,buffer);
+    strcat(output,sep);
+    snprintf(buffer, 10, "%d", tm.tm_sec);
+    strcat(output,buffer);
+    //strcat(output,sep);
+}
 
 int ingresar(int *indi, int *pos, void *ap){
   //recibe los datos de un nuevo registro, lo indexa y escribe en el archivo
@@ -498,7 +523,7 @@ void *conexion(void *socket_desc)
         }
       break;
       case 2: //mostrar
-        ctrl =mos(pos,info->reg,tmp);
+        ctrl = mos(indice,pos,info->reg,tmp);
         if(ctrl != 1){ //el registro no existe
           tmp->next = 0;
         }

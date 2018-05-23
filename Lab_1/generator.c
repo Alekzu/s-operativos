@@ -91,7 +91,7 @@ void llenar(int *indi, int *pos){
       fclose(fnom);
 
       r = 0;
-      for (i = 0 ; i < 1000; i++)
+      for (i = 0 ; i < 10000; i++)
       {
           r = rand()%cn;
           strcpy(dato->nombre,names[r]);
@@ -127,8 +127,10 @@ void llenar(int *indi, int *pos){
                   strcpy(dato->raza,"Golden");
                   break;
               case 6:
-                  strcpy(dato->raza,"Unknown");
+                  strcpy(dato->raza,"Pointer");
                   break;
+              default:
+                  strcpy(dato->raza,"Unknown");
           }
 
 
@@ -141,6 +143,7 @@ void llenar(int *indi, int *pos){
           FILE *fp;
           fp = fopen("dataDogs.dat", "r+");
           key = hash(dato->nombre); //encontrar el hash del nombre
+          if(key > 999) continue;
           posicion = poslibre(pos);
           dato->state = key;
           if(posicion == 0){
@@ -158,7 +161,7 @@ void llenar(int *indi, int *pos){
              pos[1] =pos[1]+1; //+1 registros en total
              //printf("4- ");
              fclose(fp);
-             printf("nuevo registro nº: %i\n",posicion);
+             //printf("nuevo registro nº: %i\n",posicion);
              update(indi,pos); //actualiza
           }
           else
@@ -184,7 +187,7 @@ void llenar(int *indi, int *pos){
                       //printf("base: %i\n nuevo: %i anterior: %i",indi[key],posicion,siguiente);
                       fclose(fp);
                       update(indi,pos);
-                      printf("nuevo registro enl nº: %i\n",posicion);
+                      //printf("nuevo registro enl nº: %i\n",posicion);
                       break;
                   }
                   // apuntar al siguiente
@@ -192,6 +195,7 @@ void llenar(int *indi, int *pos){
               }
       }
   }
+  printf("total: %i",i);
     //fclose(fp);
     free(dato);
     free(archivo);
@@ -203,5 +207,7 @@ int main(void){
   pos = malloc(1000 * sizeof(int));   //posiciones libres y otros
   iniciar(indice,pos);
 	llenar(indice, pos);
-  update(indice,pos);
+  //update(indice,pos);
+  free(indice);
+  free(pos);
 }
