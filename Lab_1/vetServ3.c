@@ -14,12 +14,14 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>// addr socket
-#define regSize sizeof(struct dogType)
+#define DOGSIZE sizeof(struct dogType)
 #define TRANSFSIZE sizeof(struct transfer)
 #define BACKLOG 8
 #define SEMINIT 1
+#define NUMTHREADS 32
 
 sem_t *semaforo;
 
@@ -29,15 +31,20 @@ void intHandler(int dummy) {
     keepRunning = 0;
 }
 
+//estructura usada para intercambio de datos cliente-servidor
 struct transfer{
-  //estructura usada para intercambio de datos cliente-servidor
   int opcion;
   int reg;
   char nombre[32];
 };
+//estructura para enviar informacion del cliente como argumento del hilo
+struct pasoHilo{
+  int sock_desc;
+  struct sockaddr_in client;
+};
 
+//estructura que contiene los datos de mascota
 struct dogType{
-  //estructura que contiene los datos de mascota
     char nombre[32];
     char tipo[32];
     int32_t edad;
@@ -98,7 +105,7 @@ void reload(int *indice, int *pos){
   fclose(fp);
 }
 
-int poslibre(int *pos){
+/*int poslibre(int *pos){
   //encuentra una posicion libre en el arreglo para escribir un nuevo registro
   int i, newpos;
   if(pos[2] != 0) { //comprueba que existan posiciones libres
@@ -116,7 +123,7 @@ int poslibre(int *pos){
     pos[0] = pos[0] + 108; //final del archivo actualizado
     return newpos;
   }
-}
+}*/
 
 void update(int *indi, int *pos){ //escribe el indice y pos en archivo
   FILE *fp;
@@ -177,7 +184,7 @@ int ingresar(int *indi, int *pos, void *ap){
     }
     key = hash(dato->nombre); //encontrar el hash del nombre
     posicion = pos[0]; //pos[0] indica el final del archivo
-    //pos[0] = pos[0] + regSize; //nuevo final del archivo
+    //pos[0] = pos[0] + DOGSIZE; //nuevo final del archivo
     dato->state = key;
     if(posicion == 0){
       printf("error de posicion \n");
@@ -194,7 +201,7 @@ int ingresar(int *indi, int *pos, void *ap){
          return 0;
        }
        pos[1] =pos[1]+1; //+1 registros en total
-       pos[0] = pos[0] + regSize; //nuevo final del archivo
+       pos[0] = pos[0] + DOGSIZE; //nuevo final del archivo
        fclose(fp);
        update(indi,pos); //actualiza
        printf("Registro guardado con exito \n");
@@ -224,7 +231,7 @@ int ingresar(int *indi, int *pos, void *ap){
                   return 0;
                 }
                 pos[1] =pos[1]+1; //+1 registros en total
-                pos[0] = pos[0] + regSize; //nuevo final del archivo
+                pos[0] = pos[0] + DOGSIZE; //nuevo final del archivo
                 fclose(fp);
                 update(indi,pos);
                 printf("Registro guardado con exito \n");
@@ -262,7 +269,7 @@ void *buscar(int *indi, int *pos, char bnombre[36], int *total){
     printf("Error abriendo el archivo\n");
     return NULL;
   }
-  lista = malloc(regSize*100);//temporal
+  lista = malloc(DOGSIZE*100);//temporal
   i = 0;
 
   while (siguiente != -1 && siguiente != 0)
@@ -293,10 +300,10 @@ void moverUlt(int *indi, int *pos, int reg){
   //mueve el ultimo registro a la posicion del registro borrado y arregla el hash
   FILE *fp;
   int dir;
-  struct dogType *anterior = malloc(regSize);
-  struct dogType *ultimo = malloc(regSize);
+  struct dogType *anterior = malloc(DOGSIZE);
+  struct dogType *ultimo = malloc(DOGSIZE);
   fp = fopen("dataDogs.dat", "r");
-  dir = pos[0]-regSize;
+  dir = pos[0]-DOGSIZE;
   fseek(fp, dir, SEEK_SET);
   fread(ultimo, sizeof(struct dogType),1,fp);
   if(ultimo->prev >= 8000){//existe un registro previo, arreglar la cadena
@@ -312,9 +319,9 @@ void moverUlt(int *indi, int *pos, int reg){
   //la posicion del registro borrado
   fp = fopen("dataDogs.dat", "r+");
   fseek(fp, reg, SEEK_SET);
-  fwrite(ultimo, regSize, 1,fp);
+  fwrite(ultimo, DOGSIZE, 1,fp);
   fclose(fp);
-  pos[0] = pos[0]-regSize; //final del archivo un registro antes
+  pos[0] = pos[0]-DOGSIZE; //final del archivo un registro antes
   pos[1] = pos[1]-1; //ahora hay un registro menos
   update(indi,pos);
 }
@@ -323,7 +330,7 @@ void newfile(int *indi, int *pos){
   FILE *fp;
   FILE *newfp;
   int i, dir, ini, fin;
-  struct dogType *oldReg = malloc(regSize);
+  struct dogType *oldReg = malloc(DOGSIZE);
   fp = fopen("dataDogs.dat","a+");
   newfp = fopen("newDataDogs.dat","a+");
   //copiar el indice y pos en archivo nuevo
@@ -332,11 +339,11 @@ void newfile(int *indi, int *pos){
 
   //copiar todos los registros
   for (i = 0; i <= pos[1]; i++ ){
-    dir = 8000 + regSize*i;
+    dir = 8000 + DOGSIZE*i;
     fseek(fp,dir,SEEK_SET);
-    fread(oldReg, regSize,1,fp);//leer archivo antiguo
+    fread(oldReg, DOGSIZE,1,fp);//leer archivo antiguo
     //fseek(newfp,dir,SEEK_SET);
-    fwrite(oldReg, regSize, 1,newfp); //escribir en el nuevo
+    fwrite(oldReg, DOGSIZE, 1,newfp); //escribir en el nuevo
   }
   free(oldReg);
   fclose(fp);
@@ -488,12 +495,21 @@ int mos(int *indi, int *pos, int reg, void *ap){
   //free(dato);
   return resp;
 }
-void *conexion(void *socket_desc)
+void *conexion(void *cInfo)
 {
   int *indice, *pos, salir, opt, reg, errv, r,clientfd, ctrl, *total, i;
-  clientfd = *(int*)socket_desc;
   char bNombre[36];
-  struct dogType *tmp = malloc(sizeof(struct dogType));
+//recibir informacion de cliente
+  struct pasoHilo *pasCli;
+  pasCli = (struct pasoHilo*)cInfo;
+  clientfd = pasCli->sock_desc;
+  struct in_addr ipAddr = pasCli->client.sin_addr;
+  char str[INET_ADDRSTRLEN];
+  inet_ntop( AF_INET, &ipAddr, str, INET_ADDRSTRLEN );
+  printf("ip: %s \n",str);
+  printf("wc: %i\n",clientfd);
+
+  struct dogType *tmp = malloc(DOGSIZE);
   struct transfer *info = malloc(TRANSFSIZE);
   struct dogType *lista;
   indice = malloc(1000 * sizeof(int)); //indice por nombre
@@ -502,7 +518,7 @@ void *conexion(void *socket_desc)
   iniciar(indice, pos);
   salir = 1; //variable de control
 
-  while(keepRunning){ //loop hasta que se presione ctrl + c
+  while(1){ //loop hasta que se presione ctrl + c
     r = recv(clientfd,info,TRANSFSIZE,0);
     if(r ==-1){
         perror("receive:");
@@ -511,7 +527,7 @@ void *conexion(void *socket_desc)
     opt = info->opcion;
     switch (opt) {
       case 1: //ingreso
-        r = recv(clientfd,tmp,regSize,0);
+        r = recv(clientfd,tmp,DOGSIZE,0);
         if(r ==-1){
             perror("receive:");
         exit(-1);
@@ -528,7 +544,7 @@ void *conexion(void *socket_desc)
         if(ctrl != 1){ //el registro no existe
           tmp->next = 0;
         }
-        r = send(clientfd,tmp,regSize,0);
+        r = send(clientfd,tmp,DOGSIZE,0);
         if(r == -1){
             perror("mal:");
         exit(-1);
@@ -569,7 +585,7 @@ void *conexion(void *socket_desc)
         if(*total > 0){
           for(i = 0; i < *total; i++){
             tmp = &lista[i];
-            r = send(clientfd,tmp,regSize,0); //envia un registro
+            r = send(clientfd,tmp,DOGSIZE,0); //envia un registro
             if(r == -1){
                 perror("mal:");
             break;
@@ -597,17 +613,21 @@ void *conexion(void *socket_desc)
 }
 
 int main(){
-  int svfd, r,clientfd, ctrl, client_sock, i;
+  int svfd, r,clientfd, ctrl, i;
   int sockfd, *new_sock;
   int option = 1;
 
+  struct sockaddr_in server, cliente[NUMTHREADS];
+  socklen_t tamanio, tamac;
+  pthread_t tHilos[NUMTHREADS]; //added
+  pthread_t thread_id;
+  struct pasoHilo clientInfo[NUMTHREADS];
+
   //semaforo
+
   //semaforo = sem_open("semaforo1",O_CREAT, 0700, SEMINIT);
 
-  //iniciar servidor
-  struct sockaddr_in server, cliente;
-  socklen_t tamanio, tamac;
-//socket
+//socket servidor
   svfd = socket(AF_INET,SOCK_STREAM,0); // socket para servidor
   if(svfd ==-1){
       perror("mal:");
@@ -632,41 +652,33 @@ int main(){
       perror("mal:");
   exit(-1);
   }
-  pthread_t t[20]; //added
+
   tamac = 0; //si no se inicializa, da error
   //accept recibe la conexion con el socket del servidor,
   //guarda los datos del cliente (ip,etc)
   //crea un socket exclusivo para el cliente
 
   //multithread
-    /*while(client_sock = accept(svfd, (struct sockaddr *)&cliente,&tamac))
-        {
-            puts("Connection accepted");
-            pthread_t curr_thread;
-            new_sock = malloc(sizeof(int));
-            *new_sock = client_sock;
 
-            if( pthread_create( &curr_thread , NULL ,  conexion , (void*) new_sock) < 0)
-            {
-                perror("could not create thread");
-                return 1;
-            }
-
-            //Now join the thread , so that we dont terminate before the thread
-            //pthread_join( thread_id , NULL);
-            puts("Handler assigned");
-        }*/
     while(1)        //loop infinito
       {
-       for(i=0;i<20;i++)      //can support 20 clients at a time
+       for(i=0;i<NUMTHREADS;i++)      //can support 20 clients at a time
        {
-        client_sock=accept(svfd,NULL,NULL);
-        printf("Connected to client %d\n",client_sock);
-        pthread_create(&t[i],NULL, conexion, (void *)&client_sock);
+        clientfd=accept(svfd, (struct sockaddr *)&cliente[i],&tamac);
+        printf("Connected to client %d\n",clientfd);
+        //check ip
+        struct in_addr ipAddr = cliente[i].sin_addr;
+        char str[INET_ADDRSTRLEN];
+        inet_ntop( AF_INET, &ipAddr, str, INET_ADDRSTRLEN );
+        printf("ip: %s\n",str);
+
+        clientInfo[i].sock_desc = clientfd;
+        clientInfo[i].client = cliente[i];
+        pthread_create(&tHilos[i],NULL, conexion, (void *)&clientInfo[i]);
        }
       }
 
-        if (client_sock < 0)
+        if (clientfd < 0)
         {
             perror("accept failed");
             return 1;
