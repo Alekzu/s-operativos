@@ -237,6 +237,7 @@ int main(){
         }
         if(resp == 0){
           printf("No se encontraron registros\n");
+          enterCont();
           break;
         }
         for(i = 0; i < resp; i++){

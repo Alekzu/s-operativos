@@ -105,26 +105,6 @@ void reload(int *indice, int *pos){
   fclose(fp);
 }
 
-/*int poslibre(int *pos){
-  //encuentra una posicion libre en el arreglo para escribir un nuevo registro
-  int i, newpos;
-  if(pos[2] != 0) { //comprueba que existan posiciones libres
-    for(i = 9; i < 1000; i++){ //recorre el arreglo hasta encontrar una posicion libre
-      if (pos[i] != 0){
-          newpos = pos[i];
-          pos[i] = 0;    //marca la posicion como usada
-          pos[2] = pos[2] - 1; //menos una posicion sin usar
-          return newpos;
-      }
-    }
-  }
-  else{ //si no hay posiciones libres, escribe al final del archivo
-    newpos = pos[0]; //pos[0] indica el final del archivo
-    pos[0] = pos[0] + 108; //final del archivo actualizado
-    return newpos;
-  }
-}*/
-
 void update(int *indi, int *pos){ //escribe el indice y pos en archivo
   FILE *fp;
   fp = fopen("dataDogs.dat", "r+");
@@ -138,11 +118,12 @@ void update(int *indi, int *pos){ //escribe el indice y pos en archivo
   fwrite(pos, 1000*sizeof(int), 1,fp); //actualiza el arreglo pos
   fclose(fp);
 }
-void regLog(int cliente, int opt, int reg, char bnombre[36]){
+void regLog(char cliente[INET_ADDRSTRLEN], int opt, int reg, char bNombre[36]){
   time_t t = time(NULL);
-    char output[50];
+    char output[90]="//";
     char buffer[10];
     char sep[2] = "-";
+    //strcpy(buffer,"//");
     struct tm tm = *localtime(&t);
     snprintf(buffer, 10, "%d", tm.tm_year+1900);
     strcat(output,buffer);
@@ -161,7 +142,62 @@ void regLog(int cliente, int opt, int reg, char bnombre[36]){
     strcat(output,sep);
     snprintf(buffer, 10, "%d", tm.tm_sec);
     strcat(output,buffer);
-    //strcat(output,sep);
+    strcat(output,sep);
+    //client ip
+    strcat(output,cliente);
+    strcat(output,sep);
+    //int to str
+    int length = snprintf( NULL, 0, "%d", reg );
+    char* registro = malloc( length + 1 );
+    snprintf( registro, length + 1, "%d", reg );
+    //opcion elegida
+    switch (opt) {
+      case 1:
+        strcpy(buffer,"Insercion");
+        strcat(output,buffer);
+        strcat(output,sep);
+        strcat(output,registro);
+        strcat(output,sep);
+      break;
+      case 2:
+        strcpy(buffer,"Lectura");
+        strcat(output,buffer);
+        strcat(output,sep);
+        strcat(output,registro);
+        strcat(output,sep);
+      break;
+      case 3:
+        strcpy(buffer,"Borrar");
+        strcat(output,buffer);
+        strcat(output,sep);
+        strcat(output,registro);
+        strcat(output,sep);
+      break;
+      case 4:
+        strcpy(buffer,"Busqueda");
+        strcat(output,buffer);
+        strcat(output,sep);
+        strcat(output,bNombre);
+        strcat(output,sep);
+      break;
+      default:
+        strcpy(buffer,"Unknown");
+        strcat(output,buffer);
+    }
+
+//escribe el registro en archivo
+    FILE *fp;
+    fp = fopen("serverDogs.log", "a");
+    if (fp == NULL){
+      perror("Error de archivo: ");
+      free(registro);
+      return;
+    }
+    //fseek(fp, 0, SEEK_SET);
+    //fwrite(output, sizeof(output), 1,fp);
+    fputs(output,fp);
+    fclose(fp);
+    free(registro);
 }
 
 int ingresar(int *indi, int *pos, void *ap){
@@ -516,6 +552,7 @@ void *conexion(void *cInfo)
   pos = malloc(1000 * sizeof(int));   //posiciones libres, total de registros y registros libres
   total = malloc(sizeof(int));
   iniciar(indice, pos);
+
   salir = 1; //variable de control
 
   while(1){ //loop hasta que se presione ctrl + c
@@ -524,6 +561,8 @@ void *conexion(void *cInfo)
         perror("receive:");
     exit(-1);
     }
+    reg = 0;
+    strcpy(bNombre,"none");
     opt = info->opcion;
     switch (opt) {
       case 1: //ingreso
@@ -538,8 +577,10 @@ void *conexion(void *cInfo)
             perror("mal:");
         exit(-1);
         }
+      regLog(str, opt, reg,bNombre);
       break;
       case 2: //mostrar
+        reg = info->reg;
         ctrl = mos(indice,pos,info->reg,tmp);
         if(ctrl != 1){ //el registro no existe
           tmp->next = 0;
@@ -549,6 +590,7 @@ void *conexion(void *cInfo)
             perror("mal:");
         exit(-1);
         }
+        regLog(str, opt, reg,bNombre);
       break;
       case 3: //eliminar
         r = send(clientfd,&pos[1],4,0); //envia la cantidad de registros
@@ -561,6 +603,7 @@ void *conexion(void *cInfo)
             perror("receive:");
         exit(-1);
         }
+        reg = info->reg;
         printf("eliminar: %i\n",info->reg);
         ctrl = eliminar(indice, pos, info->reg);
         r = send(clientfd,&ctrl,4,0); //envia el resultado
@@ -568,10 +611,12 @@ void *conexion(void *cInfo)
             perror("mal:");
         break;
         }
+        regLog(str, opt, reg,bNombre);
       break;
       case 4: //buscar
         //sem_wait(semaforo);
         lista = buscar(indice, pos, info->nombre, total);
+        strcpy(bNombre,info->nombre);
         //sem_post(semaforo);
         if (lista == NULL)
         {
@@ -592,6 +637,7 @@ void *conexion(void *cInfo)
             }
           }
         }
+        regLog(str, opt, reg,bNombre);
         free(lista);
       break;
       case 5: //salir
