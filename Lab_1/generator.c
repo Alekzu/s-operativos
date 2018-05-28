@@ -25,6 +25,7 @@ int hash(char name[32])
 {
   long int numeric = strtol(name,NULL,36); //convierte el string a long int
   int key = numeric % 997; //obtiene el hash para ese numero
+  if(key>999) key = 999;
   return key;
 }
 void iniciar(int *indice, int *pos){
@@ -32,12 +33,12 @@ void iniciar(int *indice, int *pos){
   fopen("dataDogs.dat", "r"); //lee el archivo, si existe
   if(fopen("dataDogs.dat", "r") != NULL){ //si existe, carga en memoria el indice y las posiciones libres
     fp = fopen("dataDogs.dat", "r");
-    printf("archivo cargado\n");
     fseek(fp, 0, SEEK_SET);
     fread(indice, 1000*sizeof(int),1,fp);
     fseek(fp, 4000, SEEK_SET);
     fread(pos, 1000*sizeof(int),1,fp);
     fclose(fp);
+    printf("archivo cargado\n");
   }
   else{     //si no, crea el archivo e inicializa los indices
     printf("archivo creado \n");
@@ -52,6 +53,16 @@ void iniciar(int *indice, int *pos){
     fwrite(pos, 1000*sizeof(int), 1,fp); //escribe pos
     fclose(fp);
   }
+}
+void reload(int *indice, int *pos){
+  FILE *fp;
+  fp = fopen("dataDogs.dat", "r");
+  //printf("archivo cargado\n");
+  fseek(fp, 0, SEEK_SET);
+  fread(indice, 1000*sizeof(int),1,fp);
+  fseek(fp, 4000, SEEK_SET);
+  fread(pos, 1000*sizeof(int),1,fp);
+  fclose(fp);
 }
 void update(int *indi, int *pos){ //actualiza el archivo
   FILE *fp;
@@ -78,6 +89,7 @@ void llenar(int *indi, int *pos){
         return;
     }
     int key, actual, posicion, i, r;
+    reload(indi,pos);
     //generar
     srand(time(NULL));
       char names[2000][32];
@@ -89,11 +101,12 @@ void llenar(int *indi, int *pos){
           cn++;
 
       fclose(fnom);
-
+      printf("names loaded \n");
       r = 0;
-      for (i = 0 ; i < 10000; i++)
+      for (i = 0 ; i < 1000000; i++)
       {
           r = rand()%cn;
+          if(r>1999||r<0)r = 1500;
           strcpy(dato->nombre,names[r]);
           //int test = hash(reg->nombre);
           //printf("nombre:%s\n", names[r]);
@@ -141,19 +154,31 @@ void llenar(int *indi, int *pos){
           dato->prev = -1; //asignacion temporal
 
           FILE *fp;
-          fp = fopen("dataDogs.dat", "r+");
+          /*fp = fopen("dataDogs.dat", "r+");
+          if (fp == NULL){
+            perror("0.Error de archivo: ");
+            return;
+          }*/
           key = hash(dato->nombre); //encontrar el hash del nombre
-          if(key > 999) continue;
+          //if(key > 999) continue;
+          //printf("nombre:%s\n",dato->nombre);
+          //printf("hash:%i\n", key);
           posicion = poslibre(pos);
+          //printf("posicion:%i\n", posicion);
           dato->state = key;
-          if(posicion == 0){
+          if(posicion <= 0){
             printf("error de posicion \n");
             return;
           }
           if (indi[key] == 0) // si no existe, inicia la lista
-          { //printf("0- ");
+          {  printf("nuevo");
              indi[key] = posicion;
              //printf("1- ");
+             fp = fopen("dataDogs.dat", "r+");
+             if (fp == NULL){
+               perror("0.Error de archivo: ");
+               return;
+             }
              fseek(fp, posicion, SEEK_SET); //ubica el indicador en la posicion libre
              //printf("2- ");
              fwrite(dato, sizeof(struct dogType), 1,fp); //escribir el dato en la posicion libre
@@ -165,20 +190,30 @@ void llenar(int *indi, int *pos){
              update(indi,pos); //actualiza
           }
           else
-          {
+          {   //printf("existe \n");
               actual = indi[key]; //primero en la lista del hash
 
               while (actual > 8000) //recorre la lista enlazada
               {   //printf("next: %i\n",actual);
                   fp = fopen("dataDogs.dat", "r");
+                  if (fp == NULL){
+                    perror("1.Error de archivo: ");
+                    return;
+                  }
                   fseek(fp, actual, SEEK_SET); //apuntar a la direccion siguiente en la lista
                   fread(archivo, sizeof(struct dogType),1,fp); //leer el registro
+                  fclose(fp);
                   // insertar si es la cola
                   if (archivo->next == -1)
                   {
+                      //printf("escribe: %i \n",posicion);
                       archivo->next = posicion; //ubicar el nuevo nodo en la cola
                       dato->prev = actual; //el nuevo nodo apunta al anterior en prev
                       fp = fopen("dataDogs.dat", "r+");
+                      if (fp == NULL){
+                        perror("2.Error de archivo: ");
+                        return;
+                      }
                       fseek(fp, actual, SEEK_SET);
                       fwrite(archivo, sizeof(struct dogType), 1,fp); //reescribir el anterior con el nuevo next
                       fseek(fp, posicion, SEEK_SET); //ubica el indicador en la posicion libre
@@ -187,15 +222,15 @@ void llenar(int *indi, int *pos){
                       //printf("base: %i\n nuevo: %i anterior: %i",indi[key],posicion,siguiente);
                       fclose(fp);
                       update(indi,pos);
-                      //printf("nuevo registro enl nº: %i\n",posicion);
+                      //printf("nuevo registro en nº: %i\n",posicion);
                       break;
                   }
                   // apuntar al siguiente
                   actual = archivo->next;
               }
-      }
+      }printf("actual: %i \n",i);
   }
-  printf("total: %i",i);
+  printf("total: %i \n",i);
     //fclose(fp);
     free(dato);
     free(archivo);
